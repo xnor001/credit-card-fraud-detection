@@ -1,0 +1,9 @@
+# 生成的数据(开箱即跑,无需提交)
+data/*.csv
+# 产物
+reports/metrics.json
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+.venv/
