@@ -1,0 +1,15 @@
+{
+  "validation_AUC": 0.9159,
+  "holdout_AUC": 0.901,
+  "holdout_KS": 0.8258,
+  "holdout_AveragePrecision_PR_AUC": 0.347,
+  "threshold_chosen_on_val": 1.0,
+  "at_threshold": {
+    "TP": 62,
+    "FP": 515,
+    "FN": 12,
+    "TN": 42133,
+    "precision": 0.1075,
+    "recall": 0.8378
+  }
+}
