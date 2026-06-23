@@ -12,8 +12,8 @@
 
 ```bash
 pip install -r requirements.txt
-python generate_data.py          # 生成 data/creditcard_synthetic.csv
-python train.py                  # 训练 + 评估,产出指标与图
+python src/generate_data.py          # 生成 data/creditcard_synthetic.csv
+python src/train.py                  # 训练 + 评估,产出指标与图
 ```
 
 产物:
@@ -48,21 +48,37 @@ python train.py                  # 训练 + 评估,产出指标与图
 
 1. 从 Kaggle 下载 `Credit Card Fraud Detection`(ULB)数据集的 `creditcard.csv`;
 2. 放到 `data/creditcard.csv`;
-3. 运行 `python train.py --data data/creditcard.csv`。
+3. 运行 `python src/train.py --data data/creditcard.csv`。
 
 字段结构一致,代码无需改动。
+
+## 完整分析报告
+
+深入的「模型选型 × 不平衡方法」对比、最优模型业务评估、错误分析与可解释性,见:
+
+**[`docs/信用卡欺诈检测·模型选型与评估分析.md`](docs/)**
+
+核心结论:在真实 ULB 数据上,**XGBoost + 无处理(不重采样)** 综合最优(PR-AUC 0.840、天然校准好);大额欺诈是跨模型的特征盲区,需补特征或对高额交易加规则。
 
 ## 项目结构
 
 ```
-generate_data.py   合成数据生成器
-train.py           训练 + 评估 + 画图
-data/              数据(运行时生成,默认 gitignore,不入库)
-reports/           指标与图(运行时生成)
+src/                      分析脚本
+  generate_data.py        合成数据生成器
+  train.py                训练 + 评估 + 画图
+  compare_imbalance.py    5 种不平衡方法对比
+  model_imbalance_grid.py 模型 × 不平衡方法网格
+  business_eval.py        校准 / 成本 / 金额加权
+  optimal_model_eval.py   最优模型业务评估 + 错误分析
+  error_analysis.py       漏抓大额欺诈诊断
+  interpretability.py     SHAP + permutation importance
+docs/                     完整分析报告(Markdown)
+reports/                  指标 CSV/JSON 与图(figures/)
+data/                     数据(运行时生成,默认 gitignore,不入库)
 ```
 
 ## 后续可扩展
 
-- 加入业务规则引擎(夜间大额、异地、短时多笔)做"规则 + 模型"融合
-- 用 SHAP 做可解释性,满足模型治理 / 监管解释
+- 加入业务规则引擎(夜间大额、异地、短时多笔)做"规则 + 模型"融合,补大额欺诈盲区
+- 补充行为特征(velocity、设备、地理、持卡人历史)提升大额欺诈召回
 - 套用论文方法:序列神经网络审问 → 自动特征发现(见 seq-feature-discovery playbook)
