@@ -1,7 +1,8 @@
 """
-最优模型业务评估 + 错误分析。
-对比两个候选:XGBoost+无处理(PR-AUC第一) 与 RandomForest+无处理(F1阈值第一)。
-指标含 AUC/KS/PR-AUC、Brier(校准前后)、成本最优阈值下 P/R/F1/金额召回。
+Business evaluation and error analysis for the best candidate models.
+Compare XGBoost+None (best PR-AUC) and RandomForest+None (best F1 threshold).
+Metrics include AUC/KS/PR-AUC, Brier before/after calibration, and P/R/F1 plus
+amount recall at the cost-optimal threshold.
 """
 import numpy as np, pandas as pd
 from sklearn.model_selection import train_test_split
@@ -40,9 +41,9 @@ xgb=XGBClassifier(n_estimators=400,learning_rate=0.05,max_depth=6,subsample=0.8,
     tree_method="hist",eval_metric="auc",random_state=42,n_jobs=-1,early_stopping_rounds=40)
 rf=RandomForestClassifier(n_estimators=80,max_depth=14,max_samples=0.5,n_jobs=-1,random_state=42)
 
-r1,_=evaluate("XGBoost+无处理", xgb, dict(eval_set=[(X_val,y_val)],verbose=False))
-r2,_=evaluate("RandomForest+无处理", rf, None)
+r1,_=evaluate("XGBoost+None", xgb, dict(eval_set=[(X_val,y_val)],verbose=False))
+r2,_=evaluate("RandomForest+None", rf, None)
 res=pd.DataFrame([r1,r2]).set_index("model").T
-print(f"不拦截损失=¥{no_model:,.0f}  (误伤成本 C_FP=¥{C_FP})\n")
+print(f"Loss if blocking nothing=¥{no_model:,.0f}  (false-positive cost C_FP=¥{C_FP})\n")
 print(res.to_string())
 res.to_csv("reports/optimal_compare.csv")
