@@ -1,7 +1,8 @@
 """
-模型 × 不平衡方法 网格(按 --method 分批)。
-两个操作点:KS 最优阈值 与 F1 最优阈值(都在 validation 上选,holdout 评估)。
-输出:train_size, AUC, KS, PR_AUC, 以及 KS阈值下 P/R/F1 和 F1阈值下 P/R/F1。
+Model x imbalance-method grid, run in batches by --method.
+Two operating points are evaluated: KS-optimal threshold and F1-optimal
+threshold, both selected on validation and evaluated on holdout.
+Outputs train_size, AUC, KS, PR_AUC, plus P/R/F1 at both thresholds.
 """
 import numpy as np, pandas as pd, time, argparse, os
 from sklearn.model_selection import train_test_split
@@ -16,6 +17,12 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler, SMOTE
 
 ap=argparse.ArgumentParser(); ap.add_argument("--method",required=True); method=ap.parse_args().method
+method_aliases = {
+    "欠采样": "undersample",
+    "过采样": "oversample",
+    "类别权重": "class_weight",
+}
+method = method_aliases.get(method, method)
 OUT="reports/model_imbalance_grid.csv"; t0=time.time()
 df=pd.read_csv("data/creditcard.csv"); X=df.drop(columns=["Class"]); y=df["Class"]
 X_tr,X_tmp,y_tr,y_tmp=train_test_split(X,y,test_size=.30,stratify=y,random_state=42)
@@ -40,10 +47,10 @@ def build(model,balanced,spw):
     if model=="LightGBM": return lgb.LGBMClassifier(n_estimators=400,learning_rate=0.05,num_leaves=31,subsample=0.8,colsample_bytree=0.8,random_state=42,n_jobs=-1,verbose=-1,scale_pos_weight=spw if balanced else 1)
     if model=="XGBoost": return XGBClassifier(n_estimators=400,learning_rate=0.05,max_depth=6,subsample=0.8,colsample_bytree=0.8,tree_method="hist",eval_metric="auc",random_state=42,n_jobs=-1,early_stopping_rounds=40,scale_pos_weight=spw if balanced else 1)
 
-if method=="欠采样":   Xt,yt=RandomUnderSampler(random_state=42).fit_resample(X_tr,y_tr); bal=False
-elif method=="过采样": Xt,yt=RandomOverSampler(random_state=42).fit_resample(X_tr,y_tr); bal=False
+if method=="undersample":   Xt,yt=RandomUnderSampler(random_state=42).fit_resample(X_tr,y_tr); bal=False
+elif method=="oversample": Xt,yt=RandomOverSampler(random_state=42).fit_resample(X_tr,y_tr); bal=False
 elif method=="SMOTE":  Xt,yt=SMOTE(random_state=42).fit_resample(X_tr,y_tr); bal=False
-elif method=="类别权重": Xt,yt,bal=X_tr,y_tr,True
+elif method=="class_weight": Xt,yt,bal=X_tr,y_tr,True
 else:                  Xt,yt,bal=X_tr,y_tr,False
 spw=(yt==0).sum()/max((yt==1).sum(),1); n=len(yt)
 
@@ -60,7 +67,7 @@ for model in ["LogReg","RandomForest","LightGBM","XGBoost"]:
     rows.append(dict(model=model,method=method,train_size=n,
         AUC=round(roc_auc_score(yh,ph),4),KS=round(ksv,4),PR_AUC=round(average_precision_score(yh,ph),4),
         P_ks=Pks,R_ks=Rks,F1_ks=Fks,P_f1=Pf,R_f1=Rf,F1_f1=Ff))
-    print(f"[{time.time()-t0:4.0f}s] {model:13s} PR={rows[-1]['PR_AUC']:.3f} | KS阈值 P/R/F1={Pks:.2f}/{Rks:.2f}/{Fks:.2f} | F1阈值 P/R/F1={Pf:.2f}/{Rf:.2f}/{Ff:.2f}",flush=True)
+    print(f"[{time.time()-t0:4.0f}s] {model:13s} PR={rows[-1]['PR_AUC']:.3f} | KS-threshold P/R/F1={Pks:.2f}/{Rks:.2f}/{Fks:.2f} | F1-threshold P/R/F1={Pf:.2f}/{Rf:.2f}/{Ff:.2f}",flush=True)
 
 cols=["model","method","train_size","AUC","KS","PR_AUC","P_ks","R_ks","F1_ks","P_f1","R_f1","F1_f1"]
 pd.DataFrame(rows)[cols].to_csv(OUT,mode="a",header=os.path.getsize(OUT)==0 if os.path.exists(OUT) else True,index=False)
