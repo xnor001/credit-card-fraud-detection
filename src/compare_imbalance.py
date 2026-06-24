@@ -1,11 +1,12 @@
 """
-不平衡处理方法对比。
+Compare imbalance-handling strategies.
 
-在同一份数据、同一个 holdout、同一套 LightGBM 超参下,只改"如何处理类别不平衡",
-对比对 AUC / KS / PR-AUC 的影响。
+Using the same data, the same holdout set, and the same LightGBM hyperparameters,
+change only how class imbalance is handled and compare AUC / KS / PR-AUC.
 
-关键纪律:所有重采样【只在训练集上做】,validation / holdout 保持原始分布不动 ——
-否则就是数据泄漏,评估结果会虚高。
+Key discipline: resampling is applied to the training set only. Validation and
+holdout keep the original distribution; otherwise the evaluation leaks data and
+looks artificially strong.
 """
 import argparse, json
 import numpy as np, pandas as pd
@@ -27,7 +28,7 @@ def fit_eval(X_tr, y_tr, X_val, y_val, X_hold, y_hold, scale_pos_weight=1):
     m = lgb.LGBMClassifier(scale_pos_weight=scale_pos_weight, **BASE)
     m.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], eval_metric="auc",
           callbacks=[lgb.early_stopping(40, verbose=False)])
-    # 阈值在 val 上选(KS 最大),holdout 只评估
+    # Select the threshold on validation by max KS; holdout is evaluation only.
     _, thr = ks_stat(y_val, m.predict_proba(X_val)[:,1])
     hp = m.predict_proba(X_hold)[:,1]
     auc = roc_auc_score(y_hold, hp); ks,_ = ks_stat(y_hold, hp)
@@ -48,19 +49,19 @@ def main(data_path):
     spw = (y_tr==0).sum()/max((y_tr==1).sum(),1)
 
     results = {}
-    # 1. 无处理
-    results["无处理 (baseline)"] = fit_eval(X_tr, y_tr, X_val, y_val, X_hold, y_hold)
-    # 2. 类别权重
-    results["类别权重 (scale_pos_weight)"] = fit_eval(X_tr, y_tr, X_val, y_val, X_hold, y_hold, scale_pos_weight=spw)
-    # 3. 欠采样
+    # 1. No imbalance treatment
+    results["None (baseline)"] = fit_eval(X_tr, y_tr, X_val, y_val, X_hold, y_hold)
+    # 2. Class weight
+    results["Class weight (scale_pos_weight)"] = fit_eval(X_tr, y_tr, X_val, y_val, X_hold, y_hold, scale_pos_weight=spw)
+    # 3. Undersampling
     Xu, yu = RandomUnderSampler(random_state=42).fit_resample(X_tr, y_tr)
-    results["随机欠采样"] = fit_eval(Xu, yu, X_val, y_val, X_hold, y_hold)
-    # 4. 过采样
+    results["Random undersampling"] = fit_eval(Xu, yu, X_val, y_val, X_hold, y_hold)
+    # 4. Oversampling
     Xo, yo = RandomOverSampler(random_state=42).fit_resample(X_tr, y_tr)
-    results["随机过采样"] = fit_eval(Xo, yo, X_val, y_val, X_hold, y_hold)
+    results["Random oversampling"] = fit_eval(Xo, yo, X_val, y_val, X_hold, y_hold)
     # 5. SMOTE
     Xs, ys = SMOTE(random_state=42).fit_resample(X_tr, y_tr)
-    results["SMOTE 合成过采样"] = fit_eval(Xs, ys, X_val, y_val, X_hold, y_hold)
+    results["SMOTE synthetic oversampling"] = fit_eval(Xs, ys, X_val, y_val, X_hold, y_hold)
 
     tab = pd.DataFrame(results).T[["AUC","KS","PR_AUC","precision","recall","train_size","train_pos"]]
     print(tab.to_string())
@@ -68,7 +69,7 @@ def main(data_path):
     with open("reports/imbalance_comparison.json","w") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
-    # 图:PR-AUC 与 KS 对比(欺诈场景最该看 PR-AUC)
+    # Plot PR-AUC and KS; PR-AUC is the key fraud metric under imbalance.
     fig, ax = plt.subplots(1, 2, figsize=(12,5))
     names = list(results.keys())
     labels = ["None","ClassWeight","Undersample","Oversample","SMOTE"]
@@ -79,7 +80,7 @@ def main(data_path):
     ax[1].set_title("KS"); ax[1].invert_yaxis()
     for i,n in enumerate(names): ax[1].text(results[n]["KS"], i, f" {results[n]['KS']}", va="center")
     plt.tight_layout(); plt.savefig("reports/figures/imbalance_comparison.png", dpi=130); plt.close()
-    print("\n图 -> reports/figures/imbalance_comparison.png  表 -> reports/imbalance_comparison.csv")
+    print("\nFigure -> reports/figures/imbalance_comparison.png  Table -> reports/imbalance_comparison.csv")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--data", default="data/creditcard.csv")
