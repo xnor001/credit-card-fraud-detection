@@ -1,11 +1,11 @@
 """
-训练 + 评估信用卡欺诈检测模型。
+Train and evaluate a credit card fraud detection model.
 
-流程(对应学习笔记里讲过的概念):
-1. 读数据 -> 三段切分 train/validation/holdout(holdout 只在最后用一次)
-2. 处理类别不平衡(LightGBM 的 scale_pos_weight)
-3. 训练 LightGBM,在 validation 上选阈值
-4. 在 holdout 上报告 AUC / KS / Precision / Recall,并画 ROC、PR、KS 图
+Workflow:
+1. Read data -> split into train/validation/holdout, with holdout used only once.
+2. Handle class imbalance through LightGBM's scale_pos_weight.
+3. Train LightGBM and choose the operating threshold on validation.
+4. Report AUC / KS / Precision / Recall on holdout and plot ROC, PR, and KS.
 """
 import argparse, os, json
 import numpy as np
@@ -30,13 +30,13 @@ def main(data_path):
     df = pd.read_csv(data_path)
     X = df.drop(columns=["Class"]); y = df["Class"]
 
-    # 三段切分:70% train / 15% val / 15% holdout(分层,固定种子)
+    # Three-way split: 70% train / 15% validation / 15% holdout.
     X_tr, X_tmp, y_tr, y_tmp = train_test_split(X, y, test_size=0.30, stratify=y, random_state=42)
     X_val, X_hold, y_val, y_hold = train_test_split(X_tmp, y_tmp, test_size=0.50, stratify=y_tmp, random_state=42)
     print(f"train {len(y_tr):,} | val {len(y_val):,} | holdout {len(y_hold):,}")
-    print(f"欺诈占比 train={y_tr.mean()*100:.3f}%  holdout={y_hold.mean()*100:.3f}%")
+    print(f"Fraud rate train={y_tr.mean()*100:.3f}%  holdout={y_hold.mean()*100:.3f}%")
 
-    # 不平衡处理:正负样本比作为权重
+    # Imbalance handling: use the negative/positive ratio as the class weight.
     spw = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
     model = lgb.LGBMClassifier(
         n_estimators=400, learning_rate=0.05, num_leaves=31,
@@ -46,18 +46,18 @@ def main(data_path):
     model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)],
               eval_metric="auc", callbacks=[lgb.early_stopping(40, verbose=False)])
 
-    # 在 validation 上用 KS 选最佳阈值
+    # Choose the threshold on validation by maximizing KS.
     val_score = model.predict_proba(X_val)[:, 1]
     val_auc = roc_auc_score(y_val, val_score)
     _, ks_thr, _, _ = ks_statistic(y_val, val_score)
 
-    # holdout 只用一次
+    # Use holdout only once.
     hp = model.predict_proba(X_hold)[:, 1]
     auc = roc_auc_score(y_hold, hp)
     ks, _, fpr, tpr = ks_statistic(y_hold, hp)
     ap = average_precision_score(y_hold, hp)
 
-    # 用 val 选出的阈值,在 holdout 上看混淆矩阵指标
+    # Apply the validation-selected threshold to holdout confusion metrics.
     pred = (hp >= ks_thr).astype(int)
     tp = int(((pred == 1) & (y_hold == 1)).sum())
     fp = int(((pred == 1) & (y_hold == 0)).sum())
@@ -79,7 +79,7 @@ def main(data_path):
     with open("reports/metrics.json", "w") as f:
         json.dump(metrics, f, indent=2, ensure_ascii=False)
 
-    # ---- 图 1: ROC + KS ----
+    # ---- Figure 1: ROC + KS ----
     plt.figure(figsize=(6, 5))
     plt.plot(fpr, tpr, color="#2F6F6A", lw=2, label=f"ROC (AUC={auc:.3f})")
     plt.plot([0, 1], [0, 1], "--", color="#888", lw=1)
@@ -90,7 +90,7 @@ def main(data_path):
     plt.title("ROC curve & KS"); plt.legend(); plt.tight_layout()
     plt.savefig(f"{FIG}/roc_ks.png", dpi=130); plt.close()
 
-    # ---- 图 2: Precision-Recall(不平衡场景更该看)----
+    # ---- Figure 2: Precision-Recall, especially important under imbalance ----
     prec, rec, _ = precision_recall_curve(y_hold, hp)
     plt.figure(figsize=(6, 5))
     plt.plot(rec, prec, color="#2563EB", lw=2, label=f"PR (AP={ap:.3f})")
@@ -99,14 +99,14 @@ def main(data_path):
     plt.title("Precision-Recall curve"); plt.legend(); plt.tight_layout()
     plt.savefig(f"{FIG}/precision_recall.png", dpi=130); plt.close()
 
-    # ---- 图 3: 特征重要性 ----
+    # ---- Figure 3: Feature importance ----
     imp = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=True).tail(12)
     plt.figure(figsize=(6, 5))
     imp.plot(kind="barh", color="#2F6F6A")
     plt.title("Top 12 feature importance"); plt.tight_layout()
     plt.savefig(f"{FIG}/feature_importance.png", dpi=130); plt.close()
 
-    print(f"\n图已保存到 {FIG}/  指标已保存到 reports/metrics.json")
+    print(f"\nFigures saved to {FIG}/  Metrics saved to reports/metrics.json")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
